@@ -1,24 +1,18 @@
 # --------------------------------------------------------------------------
-# pytest의 configuration을 정의한 모듈입니다.
+# pytest의 기본 configuration을 정의한 모듈입니다.
 #
 # @author bnbong bbbong9@gmail.com
 # --------------------------------------------------------------------------
-import uvloop
+import asyncio
 import pytest
 import pytest_asyncio
 
-from typing import Iterator, AsyncIterator
-from asyncio import AbstractEventLoop
-
-from asgi_lifespan import LifespanManager
-
-from httpx import AsyncClient
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
-from src.db.database import Base, get_db
+from sqlmodel import SQLModel
+
 from src.core.settings import AppSettings
-from src import create_app
 
 
 app_settings = AppSettings(_env_file=".env.test")
@@ -29,35 +23,51 @@ test_engine = create_async_engine(
 )
 
 
-async def get_test_db():
-    test_session_local = AsyncSession(bind=test_engine)  # type: ignore
-    try:
-        yield test_session_local
-    finally:
-        await test_session_local.close()
-
-
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def init_db():
     print("initialize test database")
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Iterator[AbstractEventLoop]:
-    loop = uvloop.new_event_loop()
+def event_loop(request):
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest_asyncio.fixture
-async def app_client() -> AsyncIterator[AsyncClient]:
-    app = create_app(app_settings)
-    app.dependency_overrides[get_db] = get_test_db
+@pytest.fixture(scope="class")
+async def engine(event_loop):
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
 
-    async with AsyncClient(
-        app=app, base_url="http://test"
-    ) as app_client, LifespanManager(app):
-        yield app_client
+    yield test_engine
+
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+
+    test_engine.sync_engine.dispose()
+
+
+@pytest_asyncio.fixture()
+async def session(engine):
+    SessionLocal = sessionmaker(  # noqa
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
+    async with engine.connect() as conn:
+        tsx = await conn.begin()
+        async with SessionLocal(bind=conn) as session:
+            nested_tsx = await conn.begin_nested()
+            yield session
+
+            if nested_tsx.is_active:
+                await nested_tsx.rollback()
+            await tsx.rollback()

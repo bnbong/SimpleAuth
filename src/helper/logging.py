@@ -25,4 +25,3 @@ def init_logger(root_logger_name: str, app_settings: AppSettings) -> logging.Log
     )
 
     logging.basicConfig(level=app_logger_level, format=LOGGING_FORMAT)
-    

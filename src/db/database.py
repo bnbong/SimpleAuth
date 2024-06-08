@@ -4,25 +4,31 @@
 # @author bnbong bbbong9@gmail.com
 # --------------------------------------------------------------------------
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-
-from pydantic import AnyUrl
+from sqlalchemy.orm import sessionmaker
 
 from src.core.settings import settings
-from src.db._base import Base
 
 
-SQLALCHEMY_DATABASE_URL: AnyUrl = str(settings.DATABASE_URI)
 engine_options = settings.DATABASE_OPTIONS
 
-engine = create_async_engine(SQLALCHEMY_DATABASE_URL, **engine_options)
+engine = create_async_engine(str(settings.DATABASE_URI), **engine_options)
+
+SessionLocal = sessionmaker(  # noqa
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+    class_=AsyncSession,
+)
 
 
 # Dependency
 async def get_db():
-    db = None
-    try:
-        db = AsyncSession(bind=engine)
-        yield db
-    finally:
-        await db.close()
-        
+    async with SessionLocal() as session:
+        try:
+            yield session
+        except Exception as e:
+            await session.rollback()
+            raise e
+        finally:
+            await session.close()

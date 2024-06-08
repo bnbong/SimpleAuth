@@ -101,7 +101,7 @@ class AppSettings(BaseSettings):
     @property
     def DATABASE_URI(self) -> PostgresDsn:
         return MultiHostUrl.build(
-            scheme="postgresql+psycopg",
+            scheme="postgresql+asyncpg",
             username=self.POSTGRES_USER,
             password=self.POSTGRES_PASSWORD,
             host=self.POSTGRES_SERVER,
@@ -116,7 +116,7 @@ class AppSettings(BaseSettings):
             "pool_recycle": 300,
             "pool_pre_ping": True,
         },
-        description="MariaDB option to create a connection.",
+        description="PostgreSQL option to create a connection.",
     )
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
