@@ -14,6 +14,7 @@ class ErrorCode(Enum):
     FORBIDDEN = ("FORBIDDEN", "SA-003", 403)
     NOT_FOUND = ("NOT_FOUND", "SA-004", 404)
     UNKNOWN_ERROR = ("UNKNOWN_ERROR", "SA-005", 500)
+    CONFLICT = ("CONFLICT", "SA-006", 409)
 
 
 class ExceptionSchema(BaseModel):

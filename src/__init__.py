@@ -11,9 +11,10 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from setuptools_scm import get_version
+from sqlmodel import SQLModel
 
 from src.core.settings import settings
-from src.db.database import engine, Base
+from src.db.database import engine
 from src.helper.logging import init_logger as _init_logger
 from src.router import router
 from src.core.settings import AppSettings
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
         logger.info("Application startup")
         logger.info("Create connection and setting up database")
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(SQLModel.metadata.create_all)
         yield
     finally:
         logger.info("Application shutdown")

@@ -11,7 +11,7 @@ from src.db.base import IdMixin, TimestampMixin
 
 
 class UserBase(SQLModel):
-    nickname: str = None
+    nickname: str = Field(nullable=True, default=None)
     email: EmailStr = Field(
         nullable=False, index=True, sa_column_kwargs={"unique": True}
     )
@@ -22,8 +22,7 @@ class User(IdMixin, TimestampMixin, UserBase, table=True):
     __tablename__ = "users"
 
 
-class UserCreate(UserBase):
-    ...
+class UserCreate(UserBase): ...
 
 
 class UserUpdate(UserBase):
@@ -32,5 +31,4 @@ class UserUpdate(UserBase):
     is_active: bool = None
 
 
-class UserResponse(User, table=False):
-    ...
+class UserResponse(User, table=False): ...

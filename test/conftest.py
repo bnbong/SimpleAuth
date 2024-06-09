@@ -7,6 +7,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -18,19 +19,6 @@ from src.core.settings import AppSettings
 app_settings = AppSettings(_env_file=".env.test")
 
 
-test_engine = create_async_engine(
-    str(app_settings.DATABASE_URI), **app_settings.DATABASE_OPTIONS
-)
-
-
-@pytest_asyncio.fixture(scope="function", autouse=True)
-async def init_db():
-    print("initialize test database")
-    async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-        await conn.run_sync(SQLModel.metadata.create_all)
-
-
 @pytest.fixture(scope="session")
 def event_loop(request):
     loop = asyncio.get_event_loop_policy().new_event_loop()
@@ -38,36 +26,35 @@ def event_loop(request):
     loop.close()
 
 
-@pytest.fixture(scope="class")
-async def engine(event_loop):
-    async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-        await conn.run_sync(SQLModel.metadata.create_all)
+async_engine = create_async_engine(
+    str(app_settings.DATABASE_URI), pool_size=5, echo=True, max_overflow=10
+)
 
-    yield test_engine
+TestingAsyncSessionLocal = sessionmaker(
+    async_engine,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
+    class_=AsyncSession,
+)
 
-    async with test_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
 
-    test_engine.sync_engine.dispose()
+@pytest_asyncio.fixture(scope="function")
+async def session():
+    connection = await async_engine.connect()
+    trans = await connection.begin()
+    async_session = TestingAsyncSessionLocal(bind=connection)
+    nested = await connection.begin_nested()
 
+    @event.listens_for(async_session.sync_session, "after_transaction_end")
+    def end_savepoint(session, transaction):
+        nonlocal nested
 
-@pytest_asyncio.fixture()
-async def session(engine):
-    SessionLocal = sessionmaker(  # noqa
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
+        if not nested.is_active:
+            nested = connection.sync_connection.begin_nested()
 
-    async with engine.connect() as conn:
-        tsx = await conn.begin()
-        async with SessionLocal(bind=conn) as session:
-            nested_tsx = await conn.begin_nested()
-            yield session
+    yield async_session
 
-            if nested_tsx.is_active:
-                await nested_tsx.rollback()
-            await tsx.rollback()
+    await trans.rollback()
+    await async_session.close()
+    await connection.close()

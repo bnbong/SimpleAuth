@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import warnings
 
-from typing import Any, Dict, Optional, Annotated
+from typing import Any, Dict, Optional, Annotated, Literal
 from typing_extensions import Self
 
 from pydantic import (
@@ -65,6 +65,7 @@ class AppSettings(BaseSettings):
         default="example_secret_key_WoW",
         description="Secret key to be used for issuing HMAC tokens.",
     )
+    ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
     SERVER_DOMAIN: str = Field(
         default="localhost",
@@ -120,9 +121,9 @@ class AppSettings(BaseSettings):
     )
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
-        if value == "changethis":
+        if value == "example_secret_key_WoW":
             message = (
-                f'The value of {var_name} is "changethis", '
+                f'The value of {var_name} is "example_secret_key_WoW", '
                 "for security, please change it, at least for deployments."
             )
             if self.ENVIRONMENT == "local":
