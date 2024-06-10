@@ -7,9 +7,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 
-from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
 
 from sqlmodel import SQLModel
 
@@ -26,35 +24,23 @@ def event_loop(request):
     loop.close()
 
 
-async_engine = create_async_engine(
-    str(app_settings.DATABASE_URI), pool_size=5, echo=True, max_overflow=10
-)
-
-TestingAsyncSessionLocal = sessionmaker(
-    async_engine,
-    expire_on_commit=False,
-    autoflush=False,
-    autocommit=False,
-    class_=AsyncSession,
+test_engine = create_async_engine(
+    str(app_settings.DATABASE_URI), **app_settings.DATABASE_OPTIONS
 )
 
 
-@pytest_asyncio.fixture(scope="function")
-async def session():
-    connection = await async_engine.connect()
-    trans = await connection.begin()
-    async_session = TestingAsyncSessionLocal(bind=connection)
-    nested = await connection.begin_nested()
+@pytest_asyncio.fixture
+async def get_test_db():
+    test_session_local = AsyncSession(bind=test_engine)  # type: ignore
+    try:
+        yield test_session_local
+    finally:
+        await test_session_local.close()
 
-    @event.listens_for(async_session.sync_session, "after_transaction_end")
-    def end_savepoint(session, transaction):
-        nonlocal nested
 
-        if not nested.is_active:
-            nested = connection.sync_connection.begin_nested()
-
-    yield async_session
-
-    await trans.rollback()
-    await async_session.close()
-    await connection.close()
+@pytest_asyncio.fixture(scope="function", autouse=True)
+async def init_db():
+    print("initialize test database")
+    async with test_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
